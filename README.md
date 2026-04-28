@@ -17,13 +17,118 @@ local app/browser
 
 Google Apps Script Web Apps cannot provide raw TCP, WebSocket tunneling, HTTP CONNECT, or true streaming responses. This project does not try to force it into those roles. Apps Script receives normal HTTP requests and forwards them with `UrlFetchApp.fetch`; all connection semantics live in the Go client and broker.
 
+## Step-By-Step Setup
+
+1. Create a shared secret:
+
+```bash
+openssl rand -hex 32
+```
+
+Use the same value for the broker `--token`, Apps Script `BRIDGE_TOKEN`, and client `--token`.
+
+2. Deploy the broker server.
+
+For Dokploy, create a Docker Compose app from this repository and use the included `docker-compose.yml`. Set these environment variables:
+
+```text
+BRIDGE_TOKEN=your-shared-secret
+DIAL_NETWORK=tcp4
+```
+
+Map your domain, for example `bridge.example.com`, to service `broker` on container port `8080`, then enable HTTPS/Let's Encrypt in Dokploy.
+
+3. Verify the broker health endpoint:
+
+```bash
+curl -i https://bridge.example.com/healthz
+```
+
+Expected body:
+
+```text
+ok
+```
+
+4. Configure Apps Script.
+
+Copy [apps-script/Code.gs](/Users/blackestwhite/Desktop/Lab/GAS/apps-script/Code.gs) into a Google Apps Script project and set:
+
+```js
+const BROKER_BASE = "https://bridge.example.com";
+const BRIDGE_TOKEN = "your-shared-secret";
+```
+
+5. Deploy Apps Script as a Web App.
+
+The deployment settings must be:
+
+```text
+Execute as: Me
+Who has access: Anyone
+```
+
+`Anyone` access is required. If it is set to `Only myself`, `Anyone with Google account`, or `User accessing the web app`, the Go client will receive Google login HTML or `401` instead of relay JSON.
+
+6. Verify Apps Script directly or through Google fronting:
+
+```bash
+curl --http1.1 \
+  "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec?op=down&bsid=test&ack=0"
+```
+
+If direct `script.google.com` is blocked on your network, test fronting:
+
+```bash
+curl --http1.1 \
+  -H "Host: script.google.com" \
+  "https://www.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec?op=down&bsid=test&ack=0"
+```
+
+Expected JSON:
+
+```json
+{"sid":"test","ack":0,"chunks":[]}
+```
+
+7. Run the local SOCKS5 client:
+
+```bash
+go run ./cmd/client \
+  --listen 127.0.0.1:1080 \
+  --relay-url "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec" \
+  --mode socks5 \
+  --token "your-shared-secret"
+```
+
+If you need Google fronting:
+
+```bash
+go run ./cmd/client \
+  --listen 127.0.0.1:1080 \
+  --relay-url "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec" \
+  --mode socks5 \
+  --token "your-shared-secret" \
+  --front-dial www.google.com:443 \
+  --front-sni www.google.com \
+  --front-host script.google.com
+```
+
+8. Test the tunnel:
+
+```bash
+curl --socks5-hostname 127.0.0.1:1080 https://api.ipify.org
+```
+
+The returned IP should be the broker server's egress IP.
+
 ## Deploy Apps Script
 
 1. Open Google Apps Script and create a new project.
 2. Replace `Code.gs` with [apps-script/Code.gs](/Users/blackestwhite/Desktop/Lab/GAS/apps-script/Code.gs).
 3. Set `BROKER_BASE` to your public broker URL, for example `https://bridge.example.com`.
 4. Set `BRIDGE_TOKEN` to the same token used by the Go client and broker.
-5. Deploy as a Web App with access set according to your needs.
+5. Deploy as a Web App with `Execute as: Me` and `Who has access: Anyone`.
 6. Use the Web App `/exec` URL as the client `--relay-url`.
 
 The Go client uses `bsid` as the Apps Script-facing session query parameter by default because Apps Script reserves `sid`. `Code.gs` accepts both `bsid` and legacy `sid`, then forwards `sid` to the broker.
