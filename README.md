@@ -59,6 +59,8 @@ const BROKER_BASE = "https://bridge.example.com";
 const BRIDGE_TOKEN = "your-shared-secret";
 ```
 
+You can also set `BROKER_BASE` and `BRIDGE_TOKEN` in the Apps Script project's Script Properties with the same keys. The script reads Script Properties first and falls back to the constants in `Code.gs`.
+
 5. Deploy Apps Script as a Web App.
 
 The deployment settings must be:
@@ -241,6 +243,7 @@ The client performs a minimal SOCKS5 no-auth CONNECT handshake, sends an `open` 
 - This is not true streaming; data moves in HTTP request/response chunks.
 - Latency is bounded by polling interval, Apps Script execution time, and network RTT.
 - Google Apps Script quotas and execution limits make this unsuitable for high bandwidth.
+- Multiple Apps Script deployments on the same Google account do not multiply the per-user quotas; separate Google accounts can add capacity, but the practical ceiling is still the documented Apps Script limits.
 - UDP is not supported.
 - WebSocket is not supported.
 - HTTP CONNECT is not implemented in Apps Script; CONNECT-capable tools should use the local SOCKS5 listener or a fixed upstream such as Xray.
@@ -269,6 +272,8 @@ curl --http1.1 -H 'Host: script.google.com' \
 ```
 
 If that returns an Apps Script/Drive-style `404`, fronting is likely viable on your network.
+
+If the script returns a JSON error like `BROKER_BASE is not configured`, fix the Apps Script constants or Script Properties before redeploying.
 
 ## Development
 
