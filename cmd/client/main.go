@@ -16,6 +16,7 @@ import (
 func main() {
 	var cfg client.Config
 	var logLevel string
+	rejectIPv6 := true
 	flag.StringVar(&cfg.Listen, "listen", "127.0.0.1:1080", "local TCP listen address")
 	flag.StringVar(&cfg.RelayURL, "relay-url", "", "Google Apps Script Web App URL")
 	flag.StringVar(&cfg.SIDParam, "sid-param", "bsid", "session query parameter for Apps Script requests")
@@ -29,8 +30,10 @@ func main() {
 	flag.StringVar(&cfg.FrontSNI, "front-sni", "", "optional TLS ServerName/SNI for fronted HTTPS")
 	flag.StringVar(&cfg.FrontHost, "front-host", "", "optional HTTP Host override for the relay URL host")
 	flag.BoolVar(&cfg.FrontForceHTTP1, "front-force-http1", true, "force HTTP/1.1 when fronted HTTPS is enabled")
+	flag.BoolVar(&rejectIPv6, "socks5-reject-ipv6", true, "reject IPv6 literal SOCKS5 targets locally")
 	flag.StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
+	cfg.SOCKS5AllowIPv6 = !rejectIPv6
 
 	level, err := logging.ParseLevel(logLevel)
 	if err != nil {

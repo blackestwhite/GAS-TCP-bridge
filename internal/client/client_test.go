@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -72,5 +73,57 @@ func TestDecodeRelayDownReportsNonJSONDetails(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not contain %q", err, want)
 		}
+	}
+}
+
+func TestReadSOCKS5ConnectRejectsIPv6(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+	deadline := time.Now().Add(time.Second)
+	_ = server.SetDeadline(deadline)
+	_ = client.SetDeadline(deadline)
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, _, err := readSOCKS5Connect(server, time.Second, true)
+		errCh <- err
+	}()
+
+	if _, err := client.Write([]byte{0x05, 0x01, 0x00}); err != nil {
+		t.Fatalf("write greeting: %v", err)
+	}
+	method := make([]byte, 2)
+	if _, err := io.ReadFull(client, method); err != nil {
+		t.Fatalf("read method selection: %v", err)
+	}
+	if method[0] != 0x05 || method[1] != 0x00 {
+		t.Fatalf("method selection = %v, want [5 0]", method)
+	}
+
+	target := net.ParseIP("2001:67c:4e8:f004::a").To16()
+	if target == nil {
+		t.Fatal("parse IPv6 target")
+	}
+	req := append([]byte{0x05, 0x01, 0x00, 0x04}, target...)
+	req = append(req, 0x01, 0xbb)
+	if _, err := client.Write(req); err != nil {
+		t.Fatalf("write connect request: %v", err)
+	}
+
+	reply := make([]byte, 10)
+	if _, err := io.ReadFull(client, reply); err != nil {
+		t.Fatalf("read SOCKS reply: %v", err)
+	}
+	if reply[1] != 0x08 {
+		t.Fatalf("reply code = 0x%02x, want 0x08", reply[1])
+	}
+
+	err := <-errCh
+	if err == nil {
+		t.Fatal("readSOCKS5Connect succeeded, want IPv6 rejection")
+	}
+	if !strings.Contains(err.Error(), "IPv6 SOCKS target rejected") {
+		t.Fatalf("error %q does not mention IPv6 rejection", err)
 	}
 }

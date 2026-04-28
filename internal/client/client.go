@@ -41,6 +41,7 @@ type Config struct {
 	FrontSNI        string
 	FrontHost       string
 	FrontForceHTTP1 bool
+	SOCKS5AllowIPv6 bool
 	Logger          *logging.Logger
 }
 
@@ -182,7 +183,7 @@ func (c *Client) handleConn(parent context.Context, conn net.Conn) {
 
 	var open protocol.Message
 	if c.cfg.Mode == ModeSOCKS5 {
-		host, port, err := readSOCKS5Connect(conn, c.cfg.RequestTimeout)
+		host, port, err := readSOCKS5Connect(conn, c.cfg.RequestTimeout, !c.cfg.SOCKS5AllowIPv6)
 		if err != nil {
 			c.logger.Warnf("socks5 handshake failed sid=%s: %v", st.sid, err)
 			return
@@ -484,7 +485,7 @@ func (st *connState) newMessage(typ string, data []byte, targetHost string, targ
 	return msg
 }
 
-func readSOCKS5Connect(conn net.Conn, timeout time.Duration) (string, int, error) {
+func readSOCKS5Connect(conn net.Conn, timeout time.Duration, rejectIPv6 bool) (string, int, error) {
 	if timeout > 0 {
 		_ = conn.SetReadDeadline(time.Now().Add(timeout))
 		defer conn.SetReadDeadline(time.Time{})
@@ -533,6 +534,7 @@ func readSOCKS5Connect(conn net.Conn, timeout time.Duration) (string, int, error
 	}
 
 	var host string
+	isIPv6 := false
 	switch req[3] {
 	case 0x01:
 		addr := make([]byte, net.IPv4len)
@@ -556,6 +558,7 @@ func readSOCKS5Connect(conn net.Conn, timeout time.Duration) (string, int, error
 			return "", 0, err
 		}
 		host = net.IP(addr).String()
+		isIPv6 = true
 	default:
 		_ = writeSOCKS5Reply(conn, 0x08)
 		return "", 0, errors.New("unsupported address type")
@@ -569,6 +572,10 @@ func readSOCKS5Connect(conn net.Conn, timeout time.Duration) (string, int, error
 	if port == 0 {
 		_ = writeSOCKS5Reply(conn, 0x04)
 		return "", 0, errors.New("invalid target port")
+	}
+	if rejectIPv6 && isIPv6 {
+		_ = writeSOCKS5Reply(conn, 0x08)
+		return "", 0, fmt.Errorf("IPv6 SOCKS target rejected: %s", host)
 	}
 	if err := writeSOCKS5Reply(conn, 0x00); err != nil {
 		return "", 0, err

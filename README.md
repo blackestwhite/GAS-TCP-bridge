@@ -234,6 +234,8 @@ The client performs a minimal SOCKS5 no-auth CONNECT handshake, sends an `open` 
 
 `--sid-param` controls the Apps Script-facing session query parameter. The default is `bsid`.
 
+`--socks5-reject-ipv6` rejects IPv6 literal SOCKS5 targets locally. The default is `true` because the broker defaults to IPv4-only dialing; set it to `false` only when the broker has working IPv6 routing and runs with `--dial-network tcp`.
+
 ## Known Limitations
 
 - This is not true streaming; data moves in HTTP request/response chunks.
@@ -252,6 +254,8 @@ If the broker returns `unauthorized`, verify `--token` on client and broker and 
 If raw mode fails with `target host and port are required`, start the broker with `--fixed-upstream host:port`.
 
 If SOCKS5 connects but traffic stalls, check that the broker can reach the requested target host and port directly.
+
+If logs show `dial tcp4: address 2001:... no suitable address found`, the local application is asking SOCKS5 to connect to an IPv6 literal target while the broker is IPv4-only. Keep `--socks5-reject-ipv6=true` so those impossible requests fail locally and the application can retry an IPv4 target.
 
 If latency is high, reduce `--poll-interval` carefully. This increases request volume and can hit Apps Script quotas faster. If logs show `poll timeout after ...` or `Client.Timeout exceeded while awaiting headers`, reduce `--poll-timeout` to fail that stuck Google poll faster and retry a new one.
 
