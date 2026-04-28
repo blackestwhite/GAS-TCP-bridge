@@ -78,12 +78,11 @@ func TestDecodeRelayDownReportsNonJSONDetails(t *testing.T) {
 	}
 }
 
-func TestFrontedRedirectPreservesMethodBodyAndToken(t *testing.T) {
+func TestFrontedRedirectUsesGoogleDefaultGET(t *testing.T) {
 	const sid = "redirect-session"
 	const token = "test-token"
 
 	var sawInitial bool
-	var sawRedirectPost bool
 	var sawRedirectGet bool
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -92,35 +91,47 @@ func TestFrontedRedirectPreservesMethodBodyAndToken(t *testing.T) {
 			if r.Host != "script.google.com" {
 				t.Errorf("initial host=%q want script.google.com", r.Host)
 			}
-			http.Redirect(w, r, "http://script.googleusercontent.com/macros/echo", http.StatusFound)
+			op := r.URL.Query().Get("op")
+			switch op {
+			case "up":
+				if r.Method != http.MethodPost {
+					t.Errorf("upload method=%s want POST", r.Method)
+				}
+				if got := r.Header.Get("X-Bridge-Token"); got != token {
+					t.Errorf("initial token=%q want %q", got, token)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read initial body: %v", err)
+				}
+				if !strings.Contains(string(body), `"sid":"`+sid+`"`) {
+					t.Errorf("initial body %q does not contain sid %q", body, sid)
+				}
+			case "down":
+				if r.Method != http.MethodGet {
+					t.Errorf("poll method=%s want GET", r.Method)
+				}
+			default:
+				t.Errorf("initial op=%q want up or down", op)
+			}
+			target := "http://script.googleusercontent.com/macros/echo?kind=" + op
+			http.Redirect(w, r, target, http.StatusFound)
 		case "/macros/echo":
 			if r.Host != "script.googleusercontent.com" {
 				t.Errorf("redirect host=%q want script.googleusercontent.com", r.Host)
 			}
+			if r.Method != http.MethodGet {
+				t.Errorf("redirect method=%s want GET", r.Method)
+			}
+			sawRedirectGet = true
 			w.Header().Set("Content-Type", "application/json")
-			switch r.Method {
-			case http.MethodPost:
-				sawRedirectPost = true
-				if r.Header.Get("X-Bridge-Token") != token {
-					t.Errorf("redirect token=%q want %q", r.Header.Get("X-Bridge-Token"), token)
-				}
-				body, err := io.ReadAll(r.Body)
-				if err != nil {
-					t.Errorf("read redirect body: %v", err)
-				}
-				if !strings.Contains(string(body), `"sid":"`+sid+`"`) {
-					t.Errorf("redirect body %q does not contain sid %q", body, sid)
-				}
+			switch r.URL.Query().Get("kind") {
+			case "up":
 				_, _ = w.Write([]byte(`{"sid":"` + sid + `","ack":1}`))
-			case http.MethodGet:
-				sawRedirectGet = true
-				if r.Header.Get("X-Bridge-Token") != token {
-					t.Errorf("redirect token=%q want %q", r.Header.Get("X-Bridge-Token"), token)
-				}
+			case "down":
 				_, _ = w.Write([]byte(`{"sid":"` + sid + `","ack":1,"chunks":[]}`))
 			default:
-				t.Errorf("redirect method=%s want POST or GET", r.Method)
-				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+				http.Error(w, "missing kind", http.StatusBadRequest)
 			}
 		default:
 			http.NotFound(w, r)
@@ -159,8 +170,8 @@ func TestFrontedRedirectPreservesMethodBodyAndToken(t *testing.T) {
 	if down.Ack != 1 {
 		t.Fatalf("down ack=%d want 1", down.Ack)
 	}
-	if !sawInitial || !sawRedirectPost || !sawRedirectGet {
-		t.Fatalf("sawInitial=%v sawRedirectPost=%v sawRedirectGet=%v, want all", sawInitial, sawRedirectPost, sawRedirectGet)
+	if !sawInitial || !sawRedirectGet {
+		t.Fatalf("sawInitial=%v sawRedirectGet=%v, want both", sawInitial, sawRedirectGet)
 	}
 }
 
