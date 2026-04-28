@@ -1,0 +1,11 @@
+services:
+  broker:
+    build: .
+    command:
+      - --listen
+      - :8080
+      - --token
+      - ${BRIDGE_TOKEN:-change-me}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
