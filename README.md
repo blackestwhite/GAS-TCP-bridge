@@ -111,7 +111,8 @@ go run ./cmd/client \
   --token "your-shared-secret" \
   --front-dial www.google.com:443 \
   --front-sni www.google.com \
-  --front-host script.google.com
+  --front-host script.google.com \
+  --poll-timeout 5s
 ```
 
 8. Test the tunnel:
@@ -187,7 +188,8 @@ go run ./cmd/client \
   --token change-me \
   --front-dial www.google.com:443 \
   --front-sni www.google.com \
-  --front-host script.google.com
+  --front-host script.google.com \
+  --poll-timeout 5s
 ```
 
 This sends TCP/TLS to `www.google.com:443` with SNI `www.google.com`, while the HTTP request still targets `Host: script.google.com` and the Apps Script deployment path. HTTP/1.1 is forced by default when fronting is configured, because it keeps Host-header behavior explicit.
@@ -215,6 +217,8 @@ The client performs a minimal SOCKS5 no-auth CONNECT handshake, sends an `open` 
 `--chunk-size` controls how TCP data is split before JSON/base64 encoding. The default is `16384`.
 
 `--poll-interval` controls client downstream polling. The default is `100ms`; lower values reduce latency but increase Apps Script and broker request volume.
+
+`--poll-timeout` controls the timeout for each downstream poll request. The default is `5s`. Keep this much lower than `--request-timeout` when using Google fronting so one stuck Apps Script/Google edge response does not block downstream data for 20-30 seconds.
 
 `--max-down-batch` controls the broker response size for `/down`. The default is `262144` bytes.
 
@@ -247,7 +251,7 @@ If raw mode fails with `target host and port are required`, start the broker wit
 
 If SOCKS5 connects but traffic stalls, check that the broker can reach the requested target host and port directly.
 
-If latency is high, reduce `--poll-interval` carefully. This increases request volume and can hit Apps Script quotas faster.
+If latency is high, reduce `--poll-interval` carefully. This increases request volume and can hit Apps Script quotas faster. If logs show `poll timeout after ...` or `Client.Timeout exceeded while awaiting headers`, reduce `--poll-timeout` to fail that stuck Google poll faster and retry a new one.
 
 If sessions linger, reduce `--session-timeout` on the broker.
 

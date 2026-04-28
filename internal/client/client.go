@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ type Config struct {
 	Mode            string
 	ChunkSize       int
 	PollInterval    time.Duration
+	PollTimeout     time.Duration
 	RequestTimeout  time.Duration
 	Token           string
 	FrontDial       string
@@ -114,6 +116,9 @@ func withDefaults(cfg Config) Config {
 	}
 	if cfg.RequestTimeout <= 0 {
 		cfg.RequestTimeout = 20 * time.Second
+	}
+	if cfg.PollTimeout <= 0 {
+		cfg.PollTimeout = minDuration(5*time.Second, cfg.RequestTimeout)
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = logging.New(logging.Info)
@@ -255,6 +260,9 @@ func (st *connState) sendLoop() {
 				st.pending.MarkAttempt(msg.Seq, time.Now())
 				ack, err := st.postUp(msg)
 				if err != nil {
+					if st.ctx.Err() != nil {
+						return
+					}
 					st.client.logger.Warnf("upload failed sid=%s seq=%d type=%s: %v", st.sid, msg.Seq, msg.Type, err)
 					failed = true
 					break
@@ -290,6 +298,9 @@ func (st *connState) pollLoop() {
 	for {
 		resp, err := st.getDown()
 		if err != nil {
+			if st.ctx.Err() != nil {
+				return
+			}
 			st.client.logger.Warnf("poll failed sid=%s: %v", st.sid, err)
 			if !sleepContext(st.ctx, backoff) {
 				return
@@ -333,14 +344,18 @@ func (st *connState) postUp(msg protocol.Message) (protocol.AckResponse, error) 
 		return protocol.AckResponse{}, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return protocol.AckResponse{}, fmt.Errorf("relay status %d", resp.StatusCode)
-	}
-	return protocol.DecodeAckResponse(resp.Body)
+	return decodeRelayAck(resp)
 }
 
 func (st *connState) getDown() (protocol.DownResponse, error) {
-	req, err := http.NewRequestWithContext(st.ctx, http.MethodGet, st.relayURL("down", st.currentDownAck()), nil)
+	ctx := st.ctx
+	var cancel context.CancelFunc
+	if st.client.cfg.PollTimeout > 0 {
+		ctx, cancel = context.WithTimeout(st.ctx, st.client.cfg.PollTimeout)
+		defer cancel()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, st.relayURL("down", st.currentDownAck()), nil)
 	if err != nil {
 		return protocol.DownResponse{}, err
 	}
@@ -349,13 +364,13 @@ func (st *connState) getDown() (protocol.DownResponse, error) {
 	}
 	resp, err := st.client.http.Do(req)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded && st.ctx.Err() == nil {
+			return protocol.DownResponse{}, fmt.Errorf("poll timeout after %s: %w", st.client.cfg.PollTimeout, err)
+		}
 		return protocol.DownResponse{}, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return protocol.DownResponse{}, fmt.Errorf("relay status %d", resp.StatusCode)
-	}
-	return protocol.DecodeDownResponse(resp.Body)
+	return decodeRelayDown(resp)
 }
 
 func (st *connState) relayURL(op string, ack uint64) string {
@@ -604,4 +619,80 @@ func minDuration(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+func decodeRelayAck(resp *http.Response) (protocol.AckResponse, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return protocol.AckResponse{}, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return protocol.AckResponse{}, relayHTTPError(resp, body)
+	}
+	ack, err := protocol.DecodeAckResponse(bytes.NewReader(body))
+	if err != nil {
+		return protocol.AckResponse{}, relayDecodeError(resp, body, err)
+	}
+	return ack, nil
+}
+
+func decodeRelayDown(resp *http.Response) (protocol.DownResponse, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return protocol.DownResponse{}, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return protocol.DownResponse{}, relayHTTPError(resp, body)
+	}
+	down, err := protocol.DecodeDownResponse(bytes.NewReader(body))
+	if err != nil {
+		return protocol.DownResponse{}, relayDecodeError(resp, body, err)
+	}
+	return down, nil
+}
+
+func relayHTTPError(resp *http.Response, body []byte) error {
+	return fmt.Errorf("relay status %d url_host=%s content_type=%q body_prefix=%q",
+		resp.StatusCode,
+		responseHost(resp),
+		resp.Header.Get("Content-Type"),
+		bodySnippet(body),
+	)
+}
+
+func relayDecodeError(resp *http.Response, body []byte, err error) error {
+	if relayLooksJSON(resp, body) {
+		return err
+	}
+	return fmt.Errorf("relay returned non-json status=%d url_host=%s content_type=%q body_prefix=%q: %w",
+		resp.StatusCode,
+		responseHost(resp),
+		resp.Header.Get("Content-Type"),
+		bodySnippet(body),
+		err,
+	)
+}
+
+func relayLooksJSON(resp *http.Response, body []byte) bool {
+	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "json") {
+		return true
+	}
+	trimmed := strings.TrimSpace(string(body))
+	return strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")
+}
+
+func responseHost(resp *http.Response) string {
+	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
+		return resp.Request.URL.Host
+	}
+	return ""
+}
+
+func bodySnippet(body []byte) string {
+	const maxSnippet = 240
+	s := strings.Join(strings.Fields(string(body)), " ")
+	if len(s) > maxSnippet {
+		return s[:maxSnippet] + "..."
+	}
+	return s
 }

@@ -22,6 +22,7 @@ func main() {
 	flag.StringVar(&cfg.Mode, "mode", client.ModeSOCKS5, "local mode: socks5 or raw")
 	flag.IntVar(&cfg.ChunkSize, "chunk-size", 16*1024, "TCP chunk size in bytes")
 	flag.DurationVar(&cfg.PollInterval, "poll-interval", 100*time.Millisecond, "downstream poll interval")
+	flag.DurationVar(&cfg.PollTimeout, "poll-timeout", 5*time.Second, "downstream poll HTTP timeout")
 	flag.DurationVar(&cfg.RequestTimeout, "request-timeout", 20*time.Second, "HTTP request timeout")
 	flag.StringVar(&cfg.Token, "token", "", "shared bridge token")
 	flag.StringVar(&cfg.FrontDial, "front-dial", "", "optional TCP dial address for fronted HTTPS, e.g. www.google.com:443")
