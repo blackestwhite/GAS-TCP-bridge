@@ -33,13 +33,13 @@ The Go client uses `bsid` as the Apps Script-facing session query parameter by d
 Direct mode for SOCKS5 targets:
 
 ```bash
-go run ./cmd/server --listen :8080 --token change-me
+go run ./cmd/server --listen :8080 --token change-me --dial-network tcp4
 ```
 
 Raw mode needs a fixed upstream because raw TCP has no target metadata:
 
 ```bash
-go run ./cmd/server --listen :8080 --fixed-upstream 127.0.0.1:9000 --token change-me
+go run ./cmd/server --listen :8080 --fixed-upstream 127.0.0.1:9000 --token change-me --dial-network tcp4
 ```
 
 With Docker Compose:
@@ -116,6 +116,8 @@ The client performs a minimal SOCKS5 no-auth CONNECT handshake, sends an `open` 
 `--session-timeout` controls idle broker cleanup. The default is `60s`.
 
 `--request-timeout` controls client HTTP request timeout. The default is `20s`.
+
+`--dial-network` on the broker controls target dialing: `tcp`, `tcp4`, or `tcp6`. Use `tcp4` on hosts without IPv6 routing to avoid failed IPv6 target dials.
 
 `--front-dial`, `--front-sni`, and `--front-host` split the outer Google TLS endpoint from the inner Apps Script HTTP host. Use them only when direct `script.google.com` is unavailable but `google.com` or `www.google.com` is reachable.
 

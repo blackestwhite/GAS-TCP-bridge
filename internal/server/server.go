@@ -22,6 +22,7 @@ type Config struct {
 	MaxDownBatch   int
 	ChunkSize      int
 	FixedUpstream  string
+	DialNetwork    string
 	Token          string
 	LogLevel       string
 	DialTimeout    time.Duration
@@ -70,6 +71,9 @@ func withDefaults(cfg Config) Config {
 	}
 	if cfg.DialTimeout <= 0 {
 		cfg.DialTimeout = 10 * time.Second
+	}
+	if cfg.DialNetwork == "" {
+		cfg.DialNetwork = "tcp"
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = logging.New(logging.Info)
@@ -372,7 +376,7 @@ func (s *Session) open(msg protocol.Message) error {
 		return err
 	}
 	dialer := net.Dialer{Timeout: s.cfg.DialTimeout}
-	conn, err := dialer.Dial("tcp", addr)
+	conn, err := dialer.Dial(s.cfg.DialNetwork, addr)
 	if err != nil {
 		return fmt.Errorf("dial target failed: %w", err)
 	}

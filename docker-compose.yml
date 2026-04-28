@@ -6,6 +6,8 @@ services:
       - :8080
       - --token
       - ${BRIDGE_TOKEN:-change-me}
+      - --dial-network
+      - ${DIAL_NETWORK:-tcp4}
     ports:
       - "8080:8080"
     restart: unless-stopped

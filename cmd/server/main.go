@@ -23,9 +23,15 @@ func main() {
 	flag.IntVar(&cfg.MaxDownBatch, "max-down-batch", 256*1024, "maximum bytes per /down response")
 	flag.IntVar(&cfg.ChunkSize, "chunk-size", 16*1024, "TCP chunk size in bytes")
 	flag.StringVar(&cfg.FixedUpstream, "fixed-upstream", "", "optional fixed upstream host:port for raw mode")
+	flag.StringVar(&cfg.DialNetwork, "dial-network", "tcp", "target dial network: tcp, tcp4, or tcp6")
 	flag.StringVar(&cfg.Token, "token", "", "shared bridge token")
 	flag.StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
+
+	if cfg.DialNetwork != "tcp" && cfg.DialNetwork != "tcp4" && cfg.DialNetwork != "tcp6" {
+		fmt.Fprintln(os.Stderr, "dial-network must be tcp, tcp4, or tcp6")
+		os.Exit(2)
+	}
 
 	level, err := logging.ParseLevel(logLevel)
 	if err != nil {
