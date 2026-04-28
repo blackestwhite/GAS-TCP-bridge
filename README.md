@@ -194,6 +194,8 @@ go run ./cmd/client \
 
 This sends TCP/TLS to `www.google.com:443` with SNI `www.google.com`, while the HTTP request still targets `Host: script.google.com` and the Apps Script deployment path. HTTP/1.1 is forced by default when fronting is configured, because it keeps Host-header behavior explicit.
 
+If only `google.com` is reachable on your network, use `--front-dial google.com:443 --front-sni google.com` instead of `www.google.com`.
+
 ## Example Raw TCP Usage
 
 If the broker is started with `--fixed-upstream 127.0.0.1:9000`, any bytes sent to the local listener are relayed to that upstream:
