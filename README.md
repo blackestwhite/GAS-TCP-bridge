@@ -228,7 +228,7 @@ The client performs a minimal SOCKS5 no-auth CONNECT handshake, sends an `open` 
 
 `--request-timeout` controls client HTTP request timeout. The default is `20s`.
 
-`--dial-network` on the broker controls target dialing: `tcp`, `tcp4`, or `tcp6`. Use `tcp4` on hosts without IPv6 routing to avoid failed IPv6 target dials.
+`--dial-network` on the broker controls target dialing: `tcp`, `tcp4`, or `tcp6`. The default is `tcp4` to avoid failed IPv6 target dials on IPv4-only hosts. Use `tcp` only when your broker has working IPv6 routing too.
 
 `--front-dial`, `--front-sni`, and `--front-host` split the outer Google TLS endpoint from the inner Apps Script HTTP host. Use them only when direct `script.google.com` is unavailable but `google.com` or `www.google.com` is reachable.
 

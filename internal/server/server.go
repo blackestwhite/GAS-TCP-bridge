@@ -73,7 +73,7 @@ func withDefaults(cfg Config) Config {
 		cfg.DialTimeout = 10 * time.Second
 	}
 	if cfg.DialNetwork == "" {
-		cfg.DialNetwork = "tcp"
+		cfg.DialNetwork = "tcp4"
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = logging.New(logging.Info)

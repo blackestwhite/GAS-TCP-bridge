@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -65,37 +64,9 @@ func newHTTPClient(cfg Config, relayURL *url.URL) *http.Client {
 	}
 
 	return &http.Client{
-		Timeout:       cfg.RequestTimeout,
-		Transport:     rt,
-		CheckRedirect: preserveRelayRedirect,
+		Timeout:   cfg.RequestTimeout,
+		Transport: rt,
 	}
-}
-
-func preserveRelayRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) >= 10 {
-		return fmt.Errorf("stopped after %d redirects", len(via))
-	}
-	prev := via[len(via)-1]
-
-	req.Method = prev.Method
-	req.Header = prev.Header.Clone()
-	req.Host = ""
-	req.ContentLength = prev.ContentLength
-	req.GetBody = prev.GetBody
-
-	if prev.GetBody != nil {
-		body, err := prev.GetBody()
-		if err != nil {
-			return err
-		}
-		req.Body = body
-		return nil
-	}
-	if prev.Body == nil || prev.Body == http.NoBody {
-		req.Body = nil
-		return nil
-	}
-	return errors.New("cannot replay redirected request body")
 }
 
 type hostRewriteTransport struct {
